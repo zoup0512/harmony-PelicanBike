@@ -7,6 +7,7 @@ export struct RideDashboard {
   telemetry: GameTelemetry = new GameTelemetry();
   compact: boolean = false;
   showStats: boolean = true;
+  mobileHud: boolean = false;
 
   @Builder
   statLabel(label: string) {
@@ -32,8 +33,8 @@ export struct RideDashboard {
     Row({ space: this.compact ? 8 : 14 }) {
       Stack({ alignContent: Alignment.Center }) {
         Gauge({ value: Math.min(55, Math.max(0, this.telemetry.speedKmh)), min: 0, max: 55 })
-          .width(this.compact ? 96 : 124)
-          .height(this.compact ? 96 : 124)
+          .width(this.mobileHud ? 54 : (this.compact ? 96 : 124))
+          .height(this.mobileHud ? 54 : (this.compact ? 96 : 124))
           .startAngle(135)
           .endAngle(405)
           .colors({
@@ -44,15 +45,15 @@ export struct RideDashboard {
               [PelicanColors.DANGER, 1.0]
             ]
           })
-          .strokeWidth(this.compact ? 7 : 9)
+          .strokeWidth(this.mobileHud ? 4 : (this.compact ? 7 : 9))
         Column({ space: 3 }) {
           Text(Math.round(this.telemetry.speedKmh).toString())
-            .fontSize(this.compact ? 28 : 36)
+            .fontSize(this.mobileHud ? 16 : (this.compact ? 28 : 36))
             .fontWeight(FontWeight.Bold)
             .fontColor(PelicanColors.TEXT)
           Text('KM/H')
-            .fontSize(11)
-            .letterSpacing(1)
+            .fontSize(this.mobileHud ? 7 : 11)
+            .letterSpacing(this.mobileHud ? 0 : 1)
             .fontColor(PelicanColors.TEXT_MUTED)
         }
       }
@@ -79,10 +80,10 @@ export struct RideDashboard {
     GlassPanel({
       radius: 16,
       paddingValue: {
-        left: this.compact ? 8 : 12,
-        right: this.compact ? 10 : 16,
-        top: this.compact ? 8 : 12,
-        bottom: this.compact ? 8 : 12
+        left: this.mobileHud ? 7 : (this.compact ? 8 : 12),
+        right: this.mobileHud ? 7 : (this.compact ? 10 : 16),
+        top: this.mobileHud ? 3 : (this.compact ? 8 : 12),
+        bottom: this.mobileHud ? 3 : (this.compact ? 8 : 12)
       },
     }) {
       this.panelContent()

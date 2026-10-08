@@ -20,7 +20,7 @@
         "startWindowIcon": "$media:app_icon",
         "startWindowBackground": "$color:start_window_background",
         "exported": true,
-        "orientation": "auto_rotation_restricted",
+        "orientation": "landscape",
         "skills": [
           {
             "entities": [

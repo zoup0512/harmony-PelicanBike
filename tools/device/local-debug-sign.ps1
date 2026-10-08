@@ -719,10 +719,12 @@ function Verify-SignedHap {
     try {
         $outCert = Join-Path $tempDir "app-chain.cer"
         $outProfile = Join-Path $tempDir "profile.p7b"
+        $outProof = Join-Path $tempDir "proof.json"
         Invoke-SignTool -Tools $Tools -Action "verify-app" -Arguments @(
             "-inFile", $HapPath,
             "-outCertChain", $outCert,
             "-outProfile", $outProfile,
+            "-outProof", $outProof,
             "-inForm", "zip"
         ) | Out-Null
         $verified = Get-VerifiedProfile -Tools $Tools -ProfilePath $outProfile

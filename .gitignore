@@ -37,3 +37,10 @@ yarn.lock
 Thumbs.db
 *.swp
 *.swo
+
+# 本机构建产物与调试签名材料（不入库）
+entry/.cxx/
+emulator/
+tools/device/last-signed-hap.txt
+tools/device/last-unsigned-hap.txt
+entry/sign/debug/

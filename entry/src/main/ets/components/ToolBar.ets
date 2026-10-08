@@ -5,7 +5,9 @@ import { GlassPanel } from './GlassPanel';
 @Component
 export struct ToolBar {
   compact: boolean = false;
+  mobileMenu: boolean = false;
   availableWidth: number = 420;
+  @State private menuOpen: boolean = false;
   musicEnabled: boolean = true;
   settingsOpen: boolean = false;
   immersiveEnabled: boolean = false;
@@ -20,6 +22,23 @@ export struct ToolBar {
       .fontWeight(action === ToolAction.HELP ? FontWeight.Bold : FontWeight.Medium)
       .fontColor(PelicanColors.TEXT)
       .backgroundColor(this.isOn(action) ? '#383FD0C9' : PelicanColors.TRANSPARENT)
+      .borderRadius(PelicanMetrics.BUTTON_RADIUS)
+      .accessibilityText(label)
+      .onClick((): void => {
+        this.onAction(action);
+      })
+  }
+
+  @Builder
+  menuItem(label: string, action: ToolAction) {
+    Button(label)
+      .width(label.length > 1 ? 58 : 42)
+      .height(38)
+      .padding({ left: 0, right: 0 })
+      .fontSize(12)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(PelicanColors.TEXT)
+      .backgroundColor(this.isOn(action) ? '#383FD0C9' : '#1FFFFFFF')
       .borderRadius(PelicanMetrics.BUTTON_RADIUS)
       .accessibilityText(label)
       .onClick((): void => {
@@ -48,15 +67,53 @@ export struct ToolBar {
   }
 
   build() {
-    Stack() {
-      GlassPanel({
-        radius: 14,
-        paddingValue: this.compact ? 4 : 6
-      }) {
-        this.panelContent()
+    if (this.mobileMenu) {
+      Column({ space: 5 }) {
+        Button(this.menuOpen ? '×' : '≡')
+          .width(38)
+          .height(36)
+          .fontSize(20)
+          .fontColor(PelicanColors.TEXT)
+          .backgroundColor(PelicanColors.GLASS_STRONG)
+          .border({ width: 1, color: PelicanColors.STROKE, radius: 12 })
+          .accessibilityText('更多设置')
+          .onClick((): void => { this.menuOpen = !this.menuOpen; })
+        if (this.menuOpen) {
+          Column({ space: 4 }) {
+            Row({ space: 4 }) {
+              this.menuItem('音乐', ToolAction.MUSIC)
+              this.menuItem('全屏', ToolAction.IMMERSIVE)
+            }
+            Row({ space: 4 }) {
+              this.menuItem('截图', ToolAction.SCREENSHOT)
+              this.menuItem('分享', ToolAction.SHARE)
+            }
+            Row({ space: 4 }) {
+              this.menuItem('设置', ToolAction.SETTINGS)
+              this.menuItem('帮助', ToolAction.HELP)
+            }
+            Row({ space: 4 }) {
+              this.menuItem('GH', ToolAction.GITHUB)
+              this.menuItem('X', ToolAction.X)
+            }
+          }
+          .padding(6)
+          .backgroundColor(PelicanColors.GLASS_STRONG)
+          .border({ width: 1, color: PelicanColors.STROKE, radius: 12 })
+        }
       }
+      .alignItems(HorizontalAlign.End)
+    } else {
+      Stack() {
+        GlassPanel({
+          radius: 14,
+          paddingValue: this.compact ? 4 : 6
+        }) {
+          this.panelContent()
+        }
+      }
+      .width(this.availableWidth)
     }
-    .width(this.availableWidth)
   }
 
   toolbarContentWidth(): number {

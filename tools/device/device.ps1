@@ -383,8 +383,8 @@ function Test-SigningConfiguration {
         return [pscustomobject]@{ Ready = $false; Message = "build-profile.json5 is missing" }
     }
 
-    $hasSigningBlock = $profileText -match '(?is)signingConfigs\s*:\s*\[\s*\{'
-    $hasProductReference = $profileText -match '(?is)signingConfig\s*:\s*"[^"]+"'
+    $hasSigningBlock = $profileText -match '(?is)"?signingConfigs"?\s*:\s*\[\s*\{'
+    $hasProductReference = $profileText -match '(?is)"?signingConfig"?\s*:\s*"[^"]+"'
     if (-not $hasSigningBlock -or -not $hasProductReference) {
         return [pscustomobject]@{ Ready = $false; Message = "No complete project signingConfig is declared" }
     }

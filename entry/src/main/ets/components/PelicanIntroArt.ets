@@ -44,15 +44,17 @@ export struct PelicanIntroArt {
 
   draw(): void {
     const context: CanvasRenderingContext2D = this.canvasContext;
-    const pixelWidth: number = vp2px(this.widthValue);
-    const pixelHeight: number = vp2px(this.heightValue);
-    if (pixelWidth <= 0 || pixelHeight <= 0) {
+    // Canvas drawing coordinates are in vp; ctx.width/height report the component
+    // size directly (verified against working Canvas usage on this SDK).
+    const canvasWidth: number = context.width;
+    const canvasHeight: number = context.height;
+    if (canvasWidth <= 0 || canvasHeight <= 0) {
       return;
     }
-    const scaleX: number = pixelWidth / 300;
-    const scaleY: number = pixelHeight / 190;
+    const scaleX: number = canvasWidth / 300;
+    const scaleY: number = canvasHeight / 190;
     context.reset();
-    context.clearRect(0, 0, pixelWidth, pixelHeight);
+    context.clearRect(0, 0, canvasWidth, canvasHeight);
     context.save();
     context.scale(scaleX, scaleY);
     this.drawRoad(context);

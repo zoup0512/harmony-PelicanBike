@@ -17,20 +17,23 @@ export struct SystemToast {
   }
 
   build() {
-    if (this.message.length > 0) {
-      Column() {
-        GlassPanel({
-          strong: true,
-          radius: 14,
-          paddingValue: { left: 14, right: 14, top: 9, bottom: 9 }
-        }) {
-          this.panelContent()
+    Stack({ alignContent: Alignment.Top }) {
+      if (this.message.length > 0) {
+        Column() {
+          GlassPanel({
+            strong: true,
+            radius: 14,
+            paddingValue: { left: 14, right: 14, top: 9, bottom: 9 }
+          }) {
+            this.panelContent()
+          }
         }
+        .constraintSize({ maxWidth: 320 })
       }
-      .alignItems(HorizontalAlign.Center)
-      .align(Alignment.Top)
-      .translate({ x: 0, y: Math.max(56, this.safeTop + 46) })
-      .constraintSize({ maxWidth: 320 })
     }
+    .width('100%')
+    .height('100%')
+    .padding({ top: Math.max(56, this.safeTop + 46) })
+    .hitTestBehavior(HitTestMode.None)
   }
 }

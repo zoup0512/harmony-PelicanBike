@@ -17,12 +17,97 @@ export struct IntroOverlay {
   compact: boolean = false;
   shortHeight: boolean = false;
   tinyHeight: boolean = false;
+  landscape: boolean = false;
   onStart: (withSound: boolean) => void = (_withSound: boolean): void => {};
   onOpenGitHub: () => void = (): void => {};
   onOpenAuthor: () => void = (): void => {};
 
   build() {
     Scroll() {
+      if (this.landscape) {
+        this.landscapeBody()
+      } else {
+        this.portraitBody()
+      }
+    }
+    .scrollable(ScrollDirection.Vertical)
+    .scrollBar(BarState.Off)
+    .width('100%')
+    .height('100%')
+    .padding({
+      top: Math.max(12, this.safeTop + 8),
+      bottom: Math.max(12, this.safeBottom + 8),
+      left: 0,
+      right: 0
+    })
+    .backgroundColor('#D20A0E1E')
+    .linearGradient({
+      angle: 180,
+      colors: [
+        ['#8C0A0E1E', 0.0],
+        ['#D1080A16', 1.0]
+      ]
+    })
+  }
+
+  @Builder
+  private landscapeBody() {
+    Row({ space: 40 }) {
+      Column() {
+        PelicanIntroArt({
+          widthValue: Math.min(280, this.heightValue * 0.58),
+          heightValue: Math.min(176, this.heightValue * 0.36)
+        })
+      }
+      .width('36%')
+      .justifyContent(FlexAlign.Center)
+      .height('100%')
+      .clip(true)
+
+      Column({ space: 8 }) {
+        Text('鹈鹕骑单车')
+          .fontSize(Math.min(46, Math.max(30, this.heightValue * 0.09)))
+          .fontWeight(FontWeight.Bolder)
+          .letterSpacing(1.5)
+          .fontColor(PelicanColors.WHITE_WARM)
+          .linearGradient(titleGradient())
+          .textAlign(TextAlign.Center)
+
+        Text('一只戴头盔、围红围巾的白鹈鹕，骑着复古单车沿海岸线追鱼。\n黄昏、星空、海浪与路灯 —— 全部实时生成，无一张外部贴图。')
+          .fontSize(13)
+          .fontColor(PelicanColors.TEXT_MUTED)
+          .lineHeight(21)
+          .textAlign(TextAlign.Center)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
+          this.startButton()
+          this.muteButton()
+        }
+        .width('100%')
+        .margin({ top: 6 })
+
+        Row({ space: 20 }) {
+          this.gitHubButton()
+          this.authorButton()
+        }
+        .justifyContent(FlexAlign.Center)
+        .margin({ top: 4 })
+      }
+      .width('56%')
+      .alignItems(HorizontalAlign.Center)
+      .justifyContent(FlexAlign.Center)
+    }
+    .width('100%')
+    .height(this.heightValue)
+    .alignItems(VerticalAlign.Center)
+    .justifyContent(FlexAlign.Center)
+    .padding({ left: 24, right: 24, top: 8, bottom: 8 })
+  }
+
+  @Builder
+  private portraitBody() {
       Column({ space: this.shortHeight ? 8 : 12 }) {
         if (!this.tinyHeight) {
           PelicanIntroArt({
@@ -131,24 +216,64 @@ export struct IntroOverlay {
       .width('100%')
       .alignItems(HorizontalAlign.Center)
       .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-    }
-    .scrollable(ScrollDirection.Vertical)
-    .scrollBar(BarState.Off)
-    .width('100%')
-    .height('100%')
-    .padding({
-      top: Math.max(12, this.safeTop + 8),
-      bottom: Math.max(12, this.safeBottom + 8),
-      left: 0,
-      right: 0
-    })
-    .backgroundColor('#D20A0E1E')
-    .linearGradient({
-      angle: 180,
-      colors: [
-        ['#8C0A0E1E', 0.0],
-        ['#D1080A16', 1.0]
-      ]
-    })
+  }
+
+  @Builder
+  private startButton() {
+    Button('开始骑行 ▶')
+      .height(46)
+      .padding({ left: 28, right: 28 })
+      .fontSize(16)
+      .fontWeight(FontWeight.Bold)
+      .fontColor('#2A1400')
+      .backgroundColor(PelicanColors.ACCENT)
+      .linearGradient(primaryGradient())
+      .borderRadius(999)
+      .shadow(accentShadow())
+      .margin({ left: 6, right: 6, top: 4, bottom: 4 })
+      .onClick(() => {
+        this.onStart(true);
+      })
+  }
+
+  @Builder
+  private muteButton() {
+    Button('静音进入')
+      .height(46)
+      .padding({ left: 20, right: 20 })
+      .fontSize(14)
+      .fontColor(PelicanColors.TEXT)
+      .backgroundColor('#14FFFFFF')
+      .border({ width: 1, color: PelicanColors.STROKE, radius: 999 })
+      .margin({ left: 6, right: 6, top: 4, bottom: 4 })
+      .onClick(() => {
+        this.onStart(false);
+      })
+  }
+
+  @Builder
+  private gitHubButton() {
+    Button('GitHub 开源仓库')
+      .fontSize(12.5)
+      .fontColor(PelicanColors.TEXT_MUTED)
+      .backgroundColor(PelicanColors.TRANSPARENT)
+      .height(34)
+      .padding({ left: 6, right: 6 })
+      .onClick(() => {
+        this.onOpenGitHub();
+      })
+  }
+
+  @Builder
+  private authorButton() {
+    Button('关注作者 X')
+      .fontSize(12.5)
+      .fontColor(PelicanColors.TEXT_MUTED)
+      .backgroundColor(PelicanColors.TRANSPARENT)
+      .height(34)
+      .padding({ left: 6, right: 6 })
+      .onClick(() => {
+        this.onOpenAuthor();
+      })
   }
 }

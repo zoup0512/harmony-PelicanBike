@@ -6,6 +6,7 @@ import { GlassPanel } from './GlassPanel';
 export struct ScorePanel {
   telemetry: GameTelemetry = new GameTelemetry();
   compact: boolean = false;
+  mobileHud: boolean = false;
   showTime: boolean = true;
   onHourChange: (hour: number) => void = (_hour: number): void => {};
   onToggleFlow: () => void = (): void => {};
@@ -15,23 +16,23 @@ export struct ScorePanel {
   panelContent() {
     Column({ space: this.showTime ? 10 : 0 }) {
       Row() {
-        Row({ space: 8 }) {
+        Row({ space: this.mobileHud ? 3 : 8 }) {
           Text('鱼')
-            .fontSize(this.compact ? 18 : 22)
+            .fontSize(this.mobileHud ? 15 : (this.compact ? 18 : 22))
             .fontWeight(FontWeight.Bold)
             .fontColor(PelicanColors.CYAN)
           Text(this.telemetry.fishCount.toString())
-            .fontSize(this.compact ? 28 : 34)
+            .fontSize(this.mobileHud ? 22 : (this.compact ? 28 : 34))
             .fontWeight(FontWeight.Bolder)
             .fontColor(PelicanColors.ACCENT)
         }
         .layoutWeight(1)
         Column({ space: 2 }) {
           Text('成就')
-            .fontSize(12)
+            .fontSize(this.mobileHud ? 9 : 12)
             .fontColor(PelicanColors.TEXT_MUTED)
           Text(this.telemetry.achievementCount.toString() + '/' + this.telemetry.achievementTotal.toString())
-            .fontSize(14)
+            .fontSize(this.mobileHud ? 11 : 14)
             .fontWeight(FontWeight.Bold)
             .fontColor(PelicanColors.TEXT)
         }
@@ -79,15 +80,15 @@ export struct ScorePanel {
       GlassPanel({
         radius: 16,
         paddingValue: {
-          left: this.compact ? 12 : 16,
-          right: this.compact ? 12 : 16,
-          top: this.compact ? 10 : 12,
-          bottom: this.compact ? 10 : 12
+          left: this.mobileHud ? 8 : (this.compact ? 12 : 16),
+          right: this.mobileHud ? 8 : (this.compact ? 12 : 16),
+          top: this.mobileHud ? 5 : (this.compact ? 10 : 12),
+          bottom: this.mobileHud ? 5 : (this.compact ? 10 : 12)
         }
       }) {
         this.panelContent()
       }
     }
-    .width(this.compact ? 172 : 230)
+    .width(this.mobileHud ? 116 : (this.compact ? 172 : 230))
   }
 }

@@ -28,19 +28,23 @@ export struct ToastOverlay {
   }
 
   build() {
-    if (this.event !== undefined) {
-      Column() {
-        GlassPanel({
-          strong: true,
-          radius: 14,
-          paddingValue: { left: 12, right: 16, top: 10, bottom: 10 }
-        }) {
-          this.panelContent()
+    Stack({ alignContent: Alignment.Top }) {
+      if (this.event !== undefined) {
+        Column() {
+          GlassPanel({
+            strong: true,
+            radius: 14,
+            paddingValue: { left: 12, right: 16, top: 10, bottom: 10 }
+          }) {
+            this.panelContent()
+          }
         }
       }
-      .align(Alignment.Top)
-      .translate({ x: 0, y: Math.max(90, this.safeTop + 86) })
     }
+    .width('100%')
+    .height('100%')
+    .padding({ top: Math.max(90, this.safeTop + 86) })
+    .hitTestBehavior(HitTestMode.None)
   }
 }
 
@@ -103,16 +107,25 @@ export struct CinematicOverlay {
   build() {
     Stack({ alignContent: Alignment.Center }) {
       if (this.active) {
-        Column()
-          .width('100%')
-          .height(this.barHeight)
-          .backgroundColor(PelicanColors.BLACK)
-          .align(Alignment.Top)
-        Column()
-          .width('100%')
-          .height(this.barHeight)
-          .backgroundColor(PelicanColors.BLACK)
-          .align(Alignment.Bottom)
+        Stack({ alignContent: Alignment.Top }) {
+          Column()
+            .width('100%')
+            .height(this.barHeight)
+            .backgroundColor(PelicanColors.BLACK)
+        }
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.None)
+
+        Stack({ alignContent: Alignment.Bottom }) {
+          Column()
+            .width('100%')
+            .height(this.barHeight)
+            .backgroundColor(PelicanColors.BLACK)
+        }
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.None)
       }
       Column()
         .width('100%')
