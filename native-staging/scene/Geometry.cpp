@@ -600,42 +600,268 @@ CpuMesh makeBirdWingMesh(bool pelican) {
     return wing;
 }
 
-CpuMesh makeBicycleMesh() {
+namespace {
+
+// Shared bicycle landmarks. Part meshes below are built in the frame's local space so
+// each animated node (wheel, crank, steering) can own its own transform.
+constexpr float kBikeRearHubX = -0.46f;
+constexpr float kBikeFrontHubX = 0.48f;
+constexpr float kBikeHubY = 0.3f;
+constexpr float kBikeCrankRadius = 0.15f;
+const Vec3 kBikeSteeringPivot{0.34f, 0.645f, 0.0f};
+
+// Duplicates a mesh with reversed winding and inverted normals. The character pass culls
+// back faces, so open containers need this to read as double-sided.
+CpuMesh invertedCopy(const CpuMesh& source) {
+    CpuMesh mesh = source;
+    for (Vertex& vertex : mesh.vertices) {
+        vertex.normal = -vertex.normal;
+    }
+    for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+        const uint32_t swapped = mesh.indices[i + 1];
+        mesh.indices[i + 1] = mesh.indices[i + 2];
+        mesh.indices[i + 2] = swapped;
+    }
+    return mesh;
+}
+
+const Vec3 kBikeTireColor{0.012f, 0.012f, 0.014f};
+const Vec3 kBikeChromeColor{0.65f, 0.68f, 0.72f};
+
+}  // namespace
+
+CpuMesh makeBicycleWheelMesh() {
+    // Centred on the hub so the node transform can spin it in place.
+    CpuMesh mesh;
+    mesh.append(makeTorus(0.282f, 0.018f, 32, 6, kBikeTireColor));
+    mesh.append(makeTorus(0.26f, 0.007f, 32, 5, kBikeChromeColor));
+    mesh.append(makeCylinder(0.018f, 0.018f, 0.1f, 10, kBikeChromeColor),
+                compose({0, 0, -0.05f}, {kPi * 0.5f, 0, 0}));
+    for (int spoke = 0; spoke < 12; ++spoke) {
+        const float angle = static_cast<float>(spoke) / 12.0f * kTau;
+        mesh.append(makeCylinderBetween({0, 0, 0}, {std::cos(angle) * 0.25f, std::sin(angle) * 0.25f, 0},
+                                        0.0016f, 0.0016f, 4, kBikeChromeColor));
+    }
+    return mesh;
+}
+
+CpuMesh makeBicycleCrankMesh() {
+    // Crank arms and pedals, centred on the bottom bracket.
+    CpuMesh mesh;
+    for (float side : {-1.0f, 1.0f}) {
+        const Vec3 arm{side * kBikeCrankRadius, 0.0f, side * 0.078f};
+        mesh.append(makeCylinderBetween({0, 0, side * 0.078f}, arm, 0.012f, 0.012f, 8, kBikeChromeColor));
+        mesh.append(makeBox({0.09f, 0.016f, 0.07f}, kBikeTireColor), Mat4::translation(arm));
+    }
+    mesh.append(makeTorus(0.1f, 0.005f, 30, 5, kBikeChromeColor), Mat4::translation({0, 0, 0.065f}));
+    return mesh;
+}
+
+CpuMesh makeBicycleSteeringMesh() {
+    // Fork, stem, handlebar and basket, expressed around the head-tube pivot so the
+    // node transform can yaw the whole assembly.
+    const Vec3 pivot = kBikeSteeringPivot;
+    const Vec3 headBottom{0.36f, 0.57f, 0};
+    const Vec3 front{kBikeFrontHubX, kBikeHubY, 0};
+    const Vec3 forkRoot{headBottom.x - pivot.x, headBottom.y - pivot.y, 0};
+    const Vec3 forkTip{front.x - pivot.x, front.y - pivot.y, 0};
+    CpuMesh mesh;
+    mesh.append(makeCylinderBetween(forkRoot, forkTip, 0.012f, 0.01f, 8, {0.0f, 0.42f, 0.42f}));
+    mesh.append(makeCylinderBetween(forkRoot, forkTip, 0.012f, 0.01f, 8, {0.0f, 0.42f, 0.42f}),
+                Mat4::translation({0, 0, 0.052f}));
+    mesh.append(makeCylinderBetween(forkRoot, forkTip, 0.012f, 0.01f, 8, {0.0f, 0.42f, 0.42f}),
+                Mat4::translation({0, 0, -0.052f}));
+    mesh.append(makeCylinderBetween({0.34f - pivot.x, 0.73f - pivot.y, 0},
+                                    {0.38f - pivot.x, 0.86f - pivot.y, 0},
+                                    0.012f, 0.012f, 8, kBikeChromeColor));
+    mesh.append(makeCylinderBetween({0.38f - pivot.x, 0.86f - pivot.y, -0.24f},
+                                    {0.38f - pivot.x, 0.86f - pivot.y, 0.24f},
+                                    0.012f, 0.012f, 8, kBikeChromeColor));
+    // Wicker basket: flares outward towards the rim, with a closed floor and a rim ring.
+    const Vec3 wicker{0.82f, 0.70f, 0.48f};
+    const Vec3 wickerTrim{0.60f, 0.45f, 0.28f};
+    const Vec3 basketCenter{0.53f - pivot.x, 0.78f - pivot.y, 0.0f};
+    constexpr float kBasketBottomRadius = 0.125f;
+    constexpr float kBasketTopRadius = 0.15f;
+    constexpr float kBasketHalfHeight = 0.075f;
+    // makeCylinder builds from y = 0 upwards, so shift it down to centre on the basket.
+    const Mat4 basketBase = Mat4::translation(basketCenter + Vec3{0.0f, -kBasketHalfHeight, 0.0f});
+    const CpuMesh basketShell =
+        makeCylinder(kBasketBottomRadius, kBasketTopRadius, kBasketHalfHeight * 2.0f, 16, wicker, false);
+    mesh.append(basketShell, basketBase);
+    mesh.append(invertedCopy(basketShell), basketBase);
+    mesh.append(makeCylinder(kBasketBottomRadius, kBasketBottomRadius, 0.012f, 16, wickerTrim, true),
+                basketBase);
+    mesh.append(makeTorus(kBasketTopRadius, 0.008f, 16, 5, wickerTrim),
+                Mat4::translation(basketCenter + Vec3{0.0f, kBasketHalfHeight, 0.0f}) *
+                    Mat4::rotationX(kPi * 0.5f));
+    // Support strut tying the basket's lower side back to the fork, as in the H5 rig.
+    mesh.append(makeCylinderBetween({0.44f - pivot.x, 0.66f - pivot.y, 0},
+                                    {0.50f - pivot.x, 0.71f - pivot.y, 0}, 0.006f, 0.006f, 8,
+                                    kBikeChromeColor));
+    return mesh;
+}
+
+CpuMesh makeBicycleFrameMesh() {
     CpuMesh mesh;
     const Vec3 teal{0.0f, 0.42f, 0.42f};
-    const Vec3 chrome{0.65f, 0.68f, 0.72f};
-    const Vec3 tire{0.012f, 0.012f, 0.014f};
-    const Vec3 cream{0.82f, 0.70f, 0.48f};
-    const Vec3 rear{-0.46f, 0.3f, 0};
-    const Vec3 front{0.48f, 0.3f, 0};
+    const Vec3 rear{kBikeRearHubX, kBikeHubY, 0};
+    const Vec3 front{kBikeFrontHubX, kBikeHubY, 0};
     const Vec3 bb{-0.06f, 0.25f, 0};
     const Vec3 seat{-0.2f, 0.64f, 0};
     const Vec3 headTop{0.32f, 0.72f, 0};
     const Vec3 headBottom{0.36f, 0.57f, 0};
-    for (const Vec3 hub : {rear, front}) {
-        mesh.append(makeTorus(0.282f, 0.018f, 32, 6, tire), Mat4::translation(hub));
-        mesh.append(makeTorus(0.26f, 0.007f, 32, 5, chrome), Mat4::translation(hub));
-        mesh.append(makeCylinder(0.018f, 0.018f, 0.1f, 10, chrome), compose(hub + Vec3{0, 0, -0.05f}, {kPi * 0.5f, 0, 0}));
-        for (int spoke = 0; spoke < 12; ++spoke) {
-            const float angle = static_cast<float>(spoke) / 12.0f * kTau;
-            mesh.append(makeCylinderBetween(hub, hub + Vec3{std::cos(angle) * 0.25f, std::sin(angle) * 0.25f, 0},
-                                            0.0016f, 0.0016f, 4, chrome));
-        }
-    }
     for (const auto& tube : std::array<std::pair<Vec3, Vec3>, 7>{{
              {rear, seat}, {rear, bb}, {bb, seat}, {seat, headTop}, {bb, headBottom},
              {headBottom, headTop}, {headBottom, front}}}) {
         mesh.append(makeCylinderBetween(tube.first, tube.second, 0.016f, 0.014f, 8, teal));
     }
-    mesh.append(makeCylinderBetween(headBottom, front, 0.012f, 0.01f, 8, teal), Mat4::translation({0, 0, 0.052f}));
-    mesh.append(makeCylinderBetween(headBottom, front, 0.012f, 0.01f, 8, teal), Mat4::translation({0, 0, -0.052f}));
     mesh.append(makeUvSphere(1.0f, 10, 5, {0.25f, 0.10f, 0.035f}), compose({-0.235f, 0.72f, 0}, {}, {0.13f, 0.035f, 0.085f}));
-    mesh.append(makeCylinderBetween({0.34f, 0.73f, 0}, {0.38f, 0.86f, 0}, 0.012f, 0.012f, 8, chrome));
-    mesh.append(makeCylinderBetween({0.38f, 0.86f, -0.24f}, {0.38f, 0.86f, 0.24f}, 0.012f, 0.012f, 8, chrome));
-    mesh.append(makeTorus(0.1f, 0.005f, 30, 5, chrome), Mat4::translation(bb + Vec3{0, 0, 0.065f}));
-    mesh.append(makeBox({0.15f, 0.022f, 0.012f}, chrome), Mat4::translation(bb + Vec3{0.075f, 0, 0.078f}));
-    mesh.append(makeCylinder(0.15f, 0.125f, 0.15f, 14, cream, false), Mat4::translation({0.53f, 0.70f, 0}));
     return mesh;
+}
+
+CpuMesh makeBicycleMesh() {
+    // Kept for host tests: the merged silhouette of every animated bicycle part.
+    CpuMesh mesh;
+    mesh.append(makeBicycleFrameMesh());
+    mesh.append(makeBicycleWheelMesh(), Mat4::translation({kBikeRearHubX, kBikeHubY, 0}));
+    mesh.append(makeBicycleWheelMesh(), Mat4::translation({kBikeFrontHubX, kBikeHubY, 0}));
+    mesh.append(makeBicycleCrankMesh(), Mat4::translation({-0.06f, 0.25f, 0}));
+    mesh.append(makeBicycleSteeringMesh(), Mat4::translation(kBikeSteeringPivot));
+    return mesh;
+}
+
+CpuMesh makeLimbMesh() {
+    // Unit limb: radius 1, spanning y in [-0.5, 0.5], so a segment matrix can scale it.
+    CpuMesh mesh = makeCylinder(1.0f, 1.0f, 1.0f, 10, {0.94f, 0.92f, 0.85f});
+    CpuMesh centered;
+    centered.append(mesh, Mat4::translation({0.0f, -0.5f, 0.0f}));
+    return centered;
+}
+
+CpuMesh makeShinMesh() {
+    // Bare lower leg: same unit limb topology, but the scaly orange of the H5 rig's M.leg.
+    CpuMesh mesh = makeCylinder(1.0f, 1.0f, 1.0f, 10, {0.95f, 0.54f, 0.17f});
+    CpuMesh centered;
+    centered.append(mesh, Mat4::translation({0.0f, -0.5f, 0.0f}));
+    return centered;
+}
+
+CpuMesh makeJointMesh() {
+    return makeUvSphere(1.0f, 12, 8, {0.94f, 0.92f, 0.85f});
+}
+
+CpuMesh makeFootMesh() {
+    // Webbed foot from the H5 rig's outline: flat plate with three toe lobes, toes towards +X.
+    const Vec3 orange{0.95f, 0.54f, 0.17f};
+    const std::array<Vec2, 12> outline{{
+        {-0.020f, 0.012f}, {0.040f, 0.030f}, {0.100f, 0.050f}, {0.090f, 0.028f},
+        {0.105f, 0.022f},  {0.110f, 0.010f}, {0.125f, 0.000f}, {0.110f, -0.010f},
+        {0.105f, -0.022f}, {0.090f, -0.028f}, {0.100f, -0.050f}, {0.040f, -0.030f},
+    }};
+    constexpr float kHalfThickness = 0.006f;
+    constexpr uint32_t kCount = static_cast<uint32_t>(outline.size());
+
+    float centerX = 0.0f;
+    float centerZ = 0.0f;
+    for (const Vec2& point : outline) {
+        centerX += point.x;
+        centerZ += point.y;
+    }
+    centerX /= static_cast<float>(kCount);
+    centerZ /= static_cast<float>(kCount);
+
+    CpuMesh mesh;
+    mesh.vertices.reserve(kCount * 2 + 2);
+    for (const Vec2& point : outline) {
+        mesh.vertices.push_back({{point.x, kHalfThickness, point.y}, {0.0f, 1.0f, 0.0f}, orange, {0.0f, 0.0f}});
+    }
+    const uint32_t topCenter = static_cast<uint32_t>(mesh.vertices.size());
+    mesh.vertices.push_back({{centerX, kHalfThickness, centerZ}, {0.0f, 1.0f, 0.0f}, orange, {0.5f, 0.5f}});
+    for (const Vec2& point : outline) {
+        mesh.vertices.push_back({{point.x, -kHalfThickness, point.y}, {0.0f, -1.0f, 0.0f}, orange, {0.0f, 0.0f}});
+    }
+    const uint32_t bottomCenter = static_cast<uint32_t>(mesh.vertices.size());
+    mesh.vertices.push_back({{centerX, -kHalfThickness, centerZ}, {0.0f, -1.0f, 0.0f}, orange, {0.5f, 0.5f}});
+
+    for (uint32_t i = 0; i < kCount; ++i) {
+        const uint32_t next = (i + 1) % kCount;
+        const uint32_t topI = i;
+        const uint32_t topNext = next;
+        const uint32_t bottomI = kCount + 1 + i;
+        const uint32_t bottomNext = kCount + 1 + next;
+        // Winding chosen so the top face looks up and the bottom face looks down.
+        mesh.indices.insert(mesh.indices.end(), {topCenter, topI, topNext});
+        mesh.indices.insert(mesh.indices.end(), {bottomCenter, bottomNext, bottomI});
+        mesh.indices.insert(mesh.indices.end(), {topI, bottomI, bottomNext});
+        mesh.indices.insert(mesh.indices.end(), {topI, bottomNext, topNext});
+    }
+    return mesh;
+}
+
+Vec3 catmullRomSample(const std::array<Vec3, 5>& points, float t) {
+    const float scaled = clamp(t, 0.0f, 1.0f) * static_cast<float>(points.size() - 1);
+    const int segment = std::min(static_cast<int>(scaled), static_cast<int>(points.size()) - 2);
+    const float u = scaled - static_cast<float>(segment);
+    const auto at = [&points](int index) {
+        return points[static_cast<size_t>(std::clamp(index, 0, static_cast<int>(points.size()) - 1))];
+    };
+    const Vec3 p0 = at(segment - 1);
+    const Vec3 p1 = at(segment);
+    const Vec3 p2 = at(segment + 1);
+    const Vec3 p3 = at(segment + 2);
+    const float u2 = u * u;
+    const float u3 = u2 * u;
+    return (p1 * 2.0f + (p2 - p0) * u + (p0 * 2.0f - p1 * 5.0f + p2 * 4.0f - p3) * u2 +
+            (p3 - p0 + (p1 - p2) * 3.0f) * u3) * 0.5f;
+}
+
+void buildNeckMesh(CpuMesh& mesh, const std::array<Vec3, 5>& controlPoints,
+                   uint32_t tubeSegments, uint32_t radialSegments, const Vec3& color) {
+    tubeSegments = std::max<uint32_t>(2, tubeSegments);
+    radialSegments = std::max<uint32_t>(3, radialSegments);
+    mesh.clear();
+    mesh.vertices.reserve(static_cast<size_t>(tubeSegments + 1) * (radialSegments + 1));
+    mesh.indices.reserve(static_cast<size_t>(tubeSegments) * radialSegments * 6);
+
+    // Parallel transport along the curve keeps the rings from spinning as the neck bends.
+    Vec3 previousNormal{1.0f, 0.0f, 0.0f};
+    for (uint32_t i = 0; i <= tubeSegments; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(tubeSegments);
+        const Vec3 center = catmullRomSample(controlPoints, t);
+        const Vec3 ahead = catmullRomSample(controlPoints, std::min(1.0f, t + 1.0e-2f));
+        const Vec3 behind = catmullRomSample(controlPoints, std::max(0.0f, t - 1.0e-2f));
+        const Vec3 tangent = (ahead - behind).normalized({0.0f, 1.0f, 0.0f});
+
+        Vec3 normal = previousNormal - tangent * dot(previousNormal, tangent);
+        if (normal.lengthSquared() < 1.0e-8f) {
+            normal = cross(tangent, Vec3{0.0f, 0.0f, 1.0f});
+        }
+        normal = normal.normalized({1.0f, 0.0f, 0.0f});
+        const Vec3 binormal = cross(tangent, normal).normalized({0.0f, 1.0f, 0.0f});
+        previousNormal = normal;
+
+        // Radius profile from the H5 rig: taper to the head, a slight belly mid-neck,
+        // then a flare where the skull meets the tube.
+        const float taper = lerp(0.085f, 0.05f, smoothstep(0.0f, 0.45f, t));
+        const float radius = taper + 0.004f * std::sin(t * kPi) + (t > 0.85f ? (t - 0.85f) * 0.05f : 0.0f);
+
+        for (uint32_t j = 0; j <= radialSegments; ++j) {
+            const float angle = static_cast<float>(j) / static_cast<float>(radialSegments) * kTau;
+            const Vec3 offset = normal * (std::cos(angle) * radius) + binormal * (std::sin(angle) * radius);
+            mesh.vertices.push_back({center + offset, offset.normalized({1.0f, 0.0f, 0.0f}), color,
+                                     {t, static_cast<float>(j) / static_cast<float>(radialSegments)}});
+        }
+    }
+
+    const uint32_t row = radialSegments + 1;
+    for (uint32_t i = 0; i < tubeSegments; ++i) {
+        for (uint32_t j = 0; j < radialSegments; ++j) {
+            const uint32_t a = i * row + j;
+            const uint32_t b = a + row;
+            mesh.indices.insert(mesh.indices.end(), {a, a + 1, b, b, a + 1, b + 1});
+        }
+    }
 }
 
 CpuMesh makePelicanBodyMesh() {
@@ -688,15 +914,87 @@ CpuMesh makePelicanBeakMesh() {
     return beak;
 }
 
+namespace {
+
+// Wing palette: cream arm, pale coverts, dark primaries (real pelicans have black tips).
+const Vec3 kWingWhite{0.98f, 0.97f, 0.93f};
+const Vec3 kWingPanel{0.88f, 0.87f, 0.84f};
+const Vec3 kWingDark{0.16f, 0.16f, 0.19f};
+
+// Scalloped wing panel spanning x in [0, length] with its trailing edge at z = depth.
+void appendWingPanel(CpuMesh& mesh, float length, float depth, int scallops, const Vec3& color,
+                     const Vec3& offset) {
+    const int count = std::max(2, scallops);
+    const int steps = count * 2;
+    CpuMesh panel;
+    for (int i = 0; i <= steps; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(steps);
+        const float trailing =
+            depth * (0.72f + 0.28f * std::abs(std::sin(t * kPi * static_cast<float>(count))));
+        panel.vertices.push_back({{t * length, 0.0f, -0.012f}, {0.0f, 1.0f, 0.0f}, color, {t, 0.0f}});
+        panel.vertices.push_back({{t * length, 0.0f, trailing}, {0.0f, 1.0f, 0.0f}, color, {t, 1.0f}});
+    }
+    for (int i = 0; i < steps; ++i) {
+        const uint32_t a = static_cast<uint32_t>(i) * 2;
+        panel.indices.insert(panel.indices.end(), {a, a + 1, a + 2, a + 1, a + 3, a + 2});
+    }
+    panel.recomputeNormals();
+    mesh.append(panel, Mat4::translation(offset));
+}
+
+// Lens-shaped primaries, matching the H5 rig's feather profile (rounded tip, pointed base).
+void appendFeather(CpuMesh& mesh, float length, float width, float yaw, const Vec3& color,
+                   const Vec3& offset) {
+    constexpr int kStations = 4;
+    CpuMesh feather;
+    for (int i = 0; i <= kStations; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(kStations);
+        // sin(pi * t) can land a hair below zero at the tip, and pow() would return NaN.
+        const float edge = std::max(std::sin(kPi * t), 0.0f);
+        const float halfWidth = width * 0.5f * std::pow(edge, 0.62f);
+        feather.vertices.push_back({{t * length, 0.0f, -halfWidth}, {0.0f, 1.0f, 0.0f}, color, {t, 0.0f}});
+        feather.vertices.push_back({{t * length, 0.0f, halfWidth}, {0.0f, 1.0f, 0.0f}, color, {t, 1.0f}});
+    }
+    for (int i = 0; i < kStations; ++i) {
+        const uint32_t a = static_cast<uint32_t>(i) * 2;
+        feather.indices.insert(feather.indices.end(), {a, a + 1, a + 2, a + 1, a + 3, a + 2});
+    }
+    feather.recomputeNormals();
+    mesh.append(feather, Mat4::translation(offset) * Mat4::rotationY(yaw));
+}
+
+// Tapered arm segment laid along +X; cheap open cylinder keeps the wing inside its triangle budget.
+void appendArmSegment(CpuMesh& mesh, float startX, float endX, float radiusStart, float radiusEnd,
+                      const Vec3& color) {
+    const float length = std::max(endX - startX, 1.0e-4f);
+    mesh.append(makeCylinder(radiusStart, radiusEnd, length, 8, color, false),
+                compose({startX, 0.0f, 0.0f}, {0.0f, 0.0f, -kPi * 0.5f}));
+}
+
+}  // namespace
+
 CpuMesh makePelicanWingMesh() {
+    // Built in the spread orientation: the arm runs along +X and the primaries fan at the hand.
+    // The rig folds the whole wing by yawing the node, so the resting silhouette lies along the
+    // body instead of reading as separate fins.
+    constexpr float kHumerus = 0.22f;
+    constexpr float kForearm = 0.23f;
+    const float handX = kHumerus + kForearm;
+
     CpuMesh mesh;
-    mesh.append(makeTriangleFin({Vec3{0, 0, 0}, Vec3{0.24f, -0.02f, 0.13f}, Vec3{0.44f, -0.02f, 0.08f}},
-                                {0.90f, 0.88f, 0.82f}));
-    for (int feather = 0; feather < 6; ++feather) {
-        const float offset = static_cast<float>(feather) * 0.035f;
-        mesh.append(makeTriangleFin({Vec3{0.36f, -0.015f, 0.03f + offset},
-                                     Vec3{0.62f + feather * 0.025f, -0.02f, 0.05f + offset},
-                                     Vec3{0.39f, -0.02f, 0.075f + offset}}, {0.025f, 0.025f, 0.03f}));
+    appendArmSegment(mesh, 0.0f, kHumerus, 0.058f, 0.046f, kWingWhite);
+    appendArmSegment(mesh, kHumerus, handX, 0.046f, 0.032f, kWingWhite);
+    appendArmSegment(mesh, handX, handX + 0.06f, 0.032f, 0.016f, kWingWhite);
+    // Wing surfaces: pale coverts over the arm, dark secondaries behind the forearm.
+    appendWingPanel(mesh, 0.30f, 0.10f, 3, kWingPanel, {0.06f, -0.004f, -0.004f});
+    appendWingPanel(mesh, kForearm, 0.165f, 4, kWingDark, {kHumerus, -0.006f, 0.004f});
+    // Primaries: six lens-shaped feathers, longest in the middle, fanning slightly backward.
+    const std::array<float, 6> lengths{{0.20f, 0.24f, 0.27f, 0.28f, 0.27f, 0.24f}};
+    for (size_t i = 0; i < lengths.size(); ++i) {
+        const float yaw = 0.10f - static_cast<float>(i) * 0.045f;
+        appendFeather(mesh, lengths[i], 0.05f, yaw, kWingDark,
+                      {handX + 0.01f, -0.003f - static_cast<float>(i) * 0.0015f,
+                       static_cast<float>(i) * 0.004f});
     }
     return mesh;
 }

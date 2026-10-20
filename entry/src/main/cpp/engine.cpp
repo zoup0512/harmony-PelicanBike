@@ -587,9 +587,25 @@ scene::RenderState Engine::MakeRenderState(const GameSnapshot& snapshot,
     state.deltaSeconds = clamp(deltaSeconds, 0.0F, 0.1F);
     state.speedMetersPerSecond = static_cast<float>(snapshot.speed);
     state.steering = static_cast<float>(snapshot.steer);
-    state.pedal = snapshot.pedaling ? 1.0F : 0.0F;
+    // Coasting keeps a reduced bob amplitude so the rider never freezes mid-stroke.
+    state.pedal = snapshot.pedaling ? 1.0F : 0.3F;
     state.airborne = snapshot.airborne ? 1.0F : 0.0F;
     state.trick = static_cast<float>(snapshot.trickBlend);
+    state.crankAngle = static_cast<float>(snapshot.crankAngle);
+    state.wheelAngle = static_cast<float>(snapshot.wheelAngle);
+    state.lean = static_cast<float>(snapshot.lean);
+    state.wheelie = static_cast<float>(snapshot.wheelie);
+    state.verticalPosition = static_cast<float>(snapshot.verticalPosition);
+    state.lane = static_cast<float>(snapshot.lane);
+    state.laneVelocity = static_cast<float>(snapshot.laneVelocity);
+    state.fishCount = static_cast<uint32_t>(std::min<std::size_t>(snapshot.activeFishCount, state.fish.size()));
+    for (uint32_t index = 0; index < state.fishCount; ++index) {
+        const FishSnapshot& source = snapshot.fish[index];
+        state.fish[index].localPosition = {source.localPosition.x, source.localPosition.y, source.localPosition.z};
+        state.fish[index].phase = source.phase;
+        state.fish[index].scale = source.scale;
+        state.fish[index].golden = source.golden;
+    }
     state.mouthOpen = mouthPulseSeconds_ > 0.0 ? 0.78F : 0.0F;
     state.hour = static_cast<float>(snapshot.hour);
     state.cloudCover = static_cast<float>(settings_.cloud);

@@ -4,10 +4,10 @@ import { GlassPanel } from './GlassPanel';
 
 @Component
 export struct RideDashboard {
-  telemetry: GameTelemetry = new GameTelemetry();
-  compact: boolean = false;
-  showStats: boolean = true;
-  mobileHud: boolean = false;
+  @Prop telemetry: GameTelemetry = new GameTelemetry();
+  @Prop compact: boolean = false;
+  @Prop showStats: boolean = true;
+  @Prop mobileHud: boolean = false;
 
   @Builder
   statLabel(label: string) {

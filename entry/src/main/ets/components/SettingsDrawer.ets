@@ -4,7 +4,7 @@ import { GlassPanel } from './GlassPanel';
 
 @Component
 export struct SettingsDrawer {
-  settings: GameSettings = new GameSettings();
+  @Prop settings: GameSettings = new GameSettings();
   widthValue: number = 720;
   heightValue: number = 1280;
   safeTop: number = 0;

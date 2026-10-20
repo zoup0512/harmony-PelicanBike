@@ -35,6 +35,7 @@ import { SettingsDrawer } from '../components/SettingsDrawer';
 import { SystemToast } from '../components/SystemToast';
 import { ToolBar } from '../components/ToolBar';
 import { TouchControls } from '../components/TouchControls';
+import { LandscapeHud } from '../components/LandscapeHud';
 import {
   CinematicOverlay,
   FpsBadge,
@@ -73,7 +74,7 @@ export struct PelicanBikePage {
   @State private flashVisible: boolean = false;
   @State private systemMessage: string = '';
   @State private userPaused: boolean = false;
-  @State private initialCamera: CameraMode = CameraMode.CINE;
+  @State private initialCamera: CameraMode = CameraMode.CHASE;
 
   gameBridge: GameBridge = new MockGameBridge();
   systemAdapter: SystemCapabilityAdapter = new PreviewSystemCapabilityAdapter();
@@ -221,9 +222,15 @@ export struct PelicanBikePage {
         this.hudLayer();
       }
 
-      ToastOverlay({ event: this.achievementToast, safeTop: this.safeTop() })
-      ScorePopOverlay({ event: this.scoreEvent, widthValue: this.windowWidth, heightValue: this.windowHeight })
-      SystemToast({ message: this.systemMessage, safeTop: this.safeTop() })
+      if (this.achievementToast !== undefined) {
+        ToastOverlay({ event: this.achievementToast, safeTop: this.safeTop() })
+      }
+      if (this.scoreEvent !== undefined) {
+        ScorePopOverlay({ event: this.scoreEvent, widthValue: this.windowWidth, heightValue: this.windowHeight })
+      }
+      if (this.systemMessage.length > 0) {
+        SystemToast({ message: this.systemMessage, safeTop: this.safeTop() })
+      }
 
       if (!this.started) {
         IntroOverlay({
@@ -287,173 +294,30 @@ export struct PelicanBikePage {
   @Builder
   private hudLayer() {
     Stack() {
-      if (!this.mobileLayout()) {
-        Stack({ alignContent: Alignment.TopStart }) {
-          BrandPanel({ widthValue: this.windowWidth, compact: this.isCompact() })
+      TouchControls({
+        compact: this.windowHeight < 390,
+        safeLeft: this.safeLeft(),
+        safeRight: this.safeRight(),
+        safeBottom: this.safeBottom(),
+        inputActive: this.appForeground && !this.userPaused && !this.helpVisible && !this.settingsVisible,
+        onControl: (key: ControlKey, pressed: boolean): void => {
+          this.gameBridge.setControl(key, pressed);
+        },
+        onAction: (action: GameAction): void => {
+          this.handleGameAction(action);
         }
-        .width('100%')
-        .height('100%')
-        .padding({ left: this.leftInset(), top: this.topInset() })
-        .hitTestBehavior(HitTestMode.Transparent)
-      }
-
-      if (this.mobileLayout()) {
-        Stack({ alignContent: Alignment.TopEnd }) {
-          ToolBar({
-            compact: true,
-            mobileMenu: true,
-            musicEnabled: this.settings.music,
-            settingsOpen: this.settingsVisible,
-            immersiveEnabled: this.immersiveEnabled,
-            onAction: (action: ToolAction): void => { this.handleToolAction(action); }
-          })
-        }
-        .width('100%')
-        .height('100%')
-        .padding({ right: this.rightInset(), top: this.topInset() })
-        .hitTestBehavior(HitTestMode.Transparent)
-      } else if (this.windowWidth >= 560) {
-        Stack({ alignContent: Alignment.TopEnd }) {
-          ToolBar({
-            compact: this.isCompact(),
-            availableWidth: this.toolBarWidth(),
-            musicEnabled: this.settings.music,
-            settingsOpen: this.settingsVisible,
-            immersiveEnabled: this.immersiveEnabled,
-            onAction: (action: ToolAction): void => {
-              this.handleToolAction(action);
-            }
-          })
-        }
-        .width('100%')
-        .height('100%')
-        .padding({ right: this.rightInset(), top: this.topInset() })
-        .hitTestBehavior(HitTestMode.Transparent)
-      } else {
-        Stack({ alignContent: Alignment.Top }) {
-          ToolBar({
-            compact: true,
-            availableWidth: this.toolBarWidth(),
-            musicEnabled: this.settings.music,
-            settingsOpen: this.settingsVisible,
-            immersiveEnabled: this.immersiveEnabled,
-            onAction: (action: ToolAction): void => {
-              this.handleToolAction(action);
-            }
-          })
-        }
-        .width('100%')
-        .height('100%')
-        .padding({ top: this.topInset() + 48 })
-        .hitTestBehavior(HitTestMode.Transparent)
-      }
-
-      Stack({ alignContent: this.windowWidth >= PelicanBreakpoints.NARROW ? Alignment.Top : Alignment.TopStart }) {
-        CameraBar({
-          activeCamera: this.telemetry.camera,
-          compact: this.windowWidth < PelicanBreakpoints.NARROW,
-          maxWidth: this.cameraBarWidth(),
-          onSelect: (mode: CameraMode): void => {
-            this.gameBridge.setCamera(mode);
-          }
-        })
-      }
-      .width('100%')
-      .height('100%')
-      .padding({
-        left: this.windowWidth >= PelicanBreakpoints.NARROW && !this.mobileLayout() ? 0 : this.leftInset(),
-        top: this.cameraBarTop()
       })
-      .hitTestBehavior(HitTestMode.Transparent)
-
-      Stack({ alignContent: this.mobileLayout() ? Alignment.TopStart : Alignment.BottomStart }) {
-        RideDashboard({
-          telemetry: this.telemetry,
-          compact: this.windowWidth < PelicanBreakpoints.NARROW || this.isShortHeight(),
-          mobileHud: this.mobileLayout(),
-          showStats: !this.mobileLayout() && this.windowWidth > PelicanBreakpoints.COMPACT && !this.isTinyHeight()
-        })
-      }
-      .width('100%')
-      .height('100%')
-      .padding({
-        left: this.mobileLayout() ? this.leftInset() + 128 : this.leftInset(),
-        top: this.mobileLayout() ? this.topInset() + 52 : 0,
-        bottom: this.mobileLayout() ? 0 : this.bottomInset()
+      LandscapeHud({
+        paused: this.userPaused,
+        telemetry: this.telemetry,
+        settings: this.settings,
+        safeLeft: this.safeLeft(),
+        safeRight: this.safeRight(),
+        safeTop: this.safeTop(),
+        onCamera: (mode: CameraMode): void => { this.gameBridge.setCamera(mode); },
+        onTool: (action: ToolAction): void => { this.handleToolAction(action); },
+        onPause: (): void => { this.handleGameAction(GameAction.TOGGLE_PAUSE); }
       })
-      .opacity(this.mobileLayout() ? 1.0 : (this.telemetry.camera === CameraMode.CINE ? 0.35 : 1.0))
-      .hitTestBehavior(HitTestMode.Transparent)
-
-      Stack({ alignContent: this.mobileLayout() ? Alignment.TopStart : Alignment.BottomEnd }) {
-        ScorePanel({
-          telemetry: this.telemetry,
-          compact: this.windowWidth < PelicanBreakpoints.NARROW,
-          mobileHud: this.mobileLayout(),
-          showTime: !this.mobileLayout() && this.windowWidth >= PelicanBreakpoints.NARROW && !this.isShortHeight(),
-          timeFlow: this.settings.timeFlow,
-          onHourChange: (hour: number): void => {
-            const next: GameSettings = this.settings.copy();
-            next.hour = hour;
-            this.applySettings(next);
-          },
-          onToggleFlow: (): void => {
-            const next: GameSettings = this.settings.copy();
-            next.timeFlow = !next.timeFlow;
-            this.applySettings(next);
-          }
-        })
-      }
-      .width('100%')
-      .height('100%')
-      .padding({
-        left: this.mobileLayout() ? this.leftInset() : 0,
-        right: this.mobileLayout() ? 0 : this.rightInset(),
-        top: this.mobileLayout() ? this.topInset() + 52 : 0,
-        bottom: this.mobileLayout() ? 0 : this.bottomInset()
-      })
-      .opacity(this.mobileLayout() ? 1.0 : (this.telemetry.camera === CameraMode.CINE ? 0.35 : 1.0))
-      .hitTestBehavior(HitTestMode.Transparent)
-
-      if (!this.mobileLayout() && this.windowWidth >= PelicanBreakpoints.HIDE_HINTS && !this.isShortHeight()) {
-        Stack({ alignContent: Alignment.Bottom }) {
-          HudHints()
-        }
-        .width('100%')
-        .height('100%')
-        .padding({ bottom: this.bottomInset() })
-        .opacity(this.telemetry.camera === CameraMode.CINE ? 0.35 : 1.0)
-        .hitTestBehavior(HitTestMode.Transparent)
-      }
-
-      if (this.settings.showFps) {
-        Stack({ alignContent: Alignment.TopEnd }) {
-          FpsBadge({
-            fps: this.telemetry.fps,
-            qualityLabel: this.telemetry.qualityLabel,
-            pixelRatio: this.telemetry.pixelRatio
-          })
-        }
-        .width('100%')
-        .height('100%')
-        .padding({ right: this.rightInset(), top: this.topInset() + 56 })
-        .hitTestBehavior(HitTestMode.Transparent)
-      }
-
-      if (this.showTouchControls()) {
-        TouchControls({
-          compact: this.windowHeight < 390,
-          safeLeft: this.safeLeft(),
-          safeRight: this.safeRight(),
-          safeBottom: this.safeBottom(),
-          bottomOffset: this.touchBottomOffset(),
-          onControl: (key: ControlKey, pressed: boolean): void => {
-            this.gameBridge.setControl(key, pressed);
-          },
-          onAction: (action: GameAction): void => {
-            this.handleGameAction(action);
-          }
-        })
-      }
     }
     .width('100%')
     .height('100%')

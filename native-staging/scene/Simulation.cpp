@@ -253,12 +253,21 @@ void ScarfSimulation::fillMesh(CpuMesh& mesh) const {
     mesh.clear();
     mesh.vertices.reserve(kPointCount);
     mesh.indices.reserve((kSegments - 1) * 6);
+    const Vec3 scarfRed{0.68f, 0.015f, 0.04f};
     for (int segment = 0; segment < kSegments; ++segment) {
-        const bool stripe = segment > kSegments - 5 && (segment % 2 == 0);
-        const Vec3 color = stripe ? Vec3{1.0f, 0.91f, 0.78f} : Vec3{0.68f, 0.015f, 0.04f};
+        const float t = static_cast<float>(segment) / static_cast<float>(kSegments - 1);
+        // Cloth narrows towards the tail and rounds off at the tip, so the ribbon reads as
+        // fabric instead of a constant-width slab.
+        const float taper = lerp(1.0f, 0.42f, smoothstep(0.15f, 1.0f, t));
+        const Vec3& edgeA = positions_[segment * kColumns];
+        const Vec3& edgeB = positions_[segment * kColumns + 1];
+        const Vec3 center = (edgeA + edgeB) * 0.5f;
+        // Slight darkening along the length keeps the folds readable in flat lighting.
+        const Vec3 color = mix(scarfRed, Vec3{0.44f, 0.01f, 0.03f}, 0.35f * t);
         for (int column = 0; column < kColumns; ++column) {
-            mesh.vertices.push_back({positions_[segment * kColumns + column], {0, 1, 0}, color,
-                                     {static_cast<float>(segment) / (kSegments - 1), static_cast<float>(column)}});
+            const Vec3& edge = column == 0 ? edgeA : edgeB;
+            mesh.vertices.push_back({mix(center, edge, taper), {0, 1, 0}, color,
+                                     {t, static_cast<float>(column)}});
         }
     }
     for (uint32_t segment = 0; segment < kSegments - 1; ++segment) {
@@ -317,39 +326,176 @@ size_t ParticleSystem::aliveCount() const {
                                              [](const Particle& particle) { return particle.life > 0.0f; }));
 }
 
+namespace {
+
+// Rig landmarks shared with Geometry.cpp's bicycle parts (frame local space, metres).
+const Vec3 kRearHub{-0.46f, 0.30f, 0.0f};
+const Vec3 kFrontHub{0.48f, 0.30f, 0.0f};
+const Vec3 kBottomBracket{-0.06f, 0.25f, 0.0f};
+const Vec3 kSteeringPivot{0.34f, 0.645f, 0.0f};
+constexpr float kCrankRadius = 0.15f;
+constexpr float kPedalHalfTrack = 0.078f;
+
+// Pedal contact sits slightly forward of the spindle, matching the H5 rig.
+constexpr float kPedalTargetForward = 0.04f;
+constexpr float kPedalTargetUp = 0.046f;
+
+// Leg segment lengths sized for this rig's hip-to-pedal reach (0.59 m..0.65 m):
+// reach is clamped below thigh+shin so the knee always keeps a visible bend.
+constexpr float kThighLength = 0.36f;
+constexpr float kShinLength = 0.37f;
+constexpr float kThighRadius = 0.055f;
+// Bare lower leg is much thinner than the feathered thigh, matching the H5 rig ratio.
+constexpr float kShinRadius = 0.022f;
+constexpr float kJointRadius = 0.052f;
+constexpr float kAnkleRadius = 0.028f;
+
+Vec3 rotateZ(const Vec3& value, float angle) {
+    const float c = std::cos(angle);
+    const float s = std::sin(angle);
+    return {value.x * c - value.y * s, value.x * s + value.y * c, value.z};
+}
+
+// Column-major basis whose local +Y spans a -> b, so a unit limb mesh maps onto the segment.
+Mat4 segmentMatrix(const Vec3& a, const Vec3& b) {
+    const Vec3 delta = b - a;
+    const float length = std::max(delta.length(), 1.0e-4f);
+    const Vec3 axis = delta / length;
+    const Vec3 reference = std::abs(axis.z) < 0.9f ? Vec3{0.0f, 0.0f, 1.0f} : Vec3{1.0f, 0.0f, 0.0f};
+    const Vec3 side = cross(reference, axis).normalized({1.0f, 0.0f, 0.0f});
+    const Vec3 up = cross(axis, side);
+    Mat4 basis;
+    basis.m[0] = side.x;
+    basis.m[1] = side.y;
+    basis.m[2] = side.z;
+    basis.m[4] = axis.x;
+    basis.m[5] = axis.y;
+    basis.m[6] = axis.z;
+    basis.m[8] = up.x;
+    basis.m[9] = up.y;
+    basis.m[10] = up.z;
+    return Mat4::translation((a + b) * 0.5f) * basis * Mat4::scale({1.0f, length, 1.0f});
+}
+
+// Law-of-cosines two-bone solve; the pole steers the bend direction.
+void solveTwoBone(const Vec3& root, const Vec3& target, float upper, float lower,
+                  const Vec3& pole, Vec3& joint, Vec3& end) {
+    const Vec3 delta = target - root;
+    const float distance = std::max(delta.length(), 1.0e-4f);
+    const float reach = clamp(distance, std::abs(upper - lower) + 1.0e-4f, (upper + lower) * 0.999f);
+    const Vec3 axis = delta / distance;
+
+    Vec3 bend = pole - axis * dot(pole, axis);
+    if (bend.lengthSquared() < 1.0e-8f) {
+        bend = cross(axis, Vec3{0.0f, 0.0f, 1.0f});
+    }
+    bend = bend.normalized({1.0f, 0.0f, 0.0f});
+
+    const float cosine = clamp((upper * upper + reach * reach - lower * lower) / (2.0f * upper * reach), -1.0f, 1.0f);
+    const float angle = std::acos(cosine);
+    joint = root + (axis * std::cos(angle) + bend * std::sin(angle)) * upper;
+    end = target;
+}
+
+}  // namespace
+
 void CharacterAnimator::update(const AnimationInputs& inputs) {
     const float dt = clamp(inputs.deltaTime, 0.0f, 0.1f);
-    wheelAngle_ = std::fmod(wheelAngle_ + inputs.speed * dt / 0.30f, kTau);
-    crankAngle_ = std::fmod(crankAngle_ + inputs.speed * dt / 0.30f * 28.0f / 44.0f, kTau);
+    // The ride simulation owns these angles (gear-aware crank speed); wrap only for drawing.
+    wheelAngle_ = std::fmod(inputs.wheelAngle, kTau);
+    crankAngle_ = std::fmod(inputs.crankAngle, kTau);
+    if (wheelAngle_ < 0.0f) {
+        wheelAngle_ += kTau;
+    }
+    if (crankAngle_ < 0.0f) {
+        crankAngle_ += kTau;
+    }
     jaw_ = damp(jaw_, saturate(inputs.mouthOpen), 20.0f, dt);
     wingSpread_ = damp(wingSpread_, saturate(inputs.trick), 5.0f, dt);
 
     const float bob = -std::abs(std::sin(crankAngle_)) * 0.012f * inputs.pedal;
     const float wingFlap = std::sin(inputs.time * 8.5f) * 0.55f * inputs.airborne +
                            std::sin(inputs.time * 2.6f) * 0.32f * wingSpread_;
-    nodes_.bicycle = compose({0.0f, 0.0f, 0.0f}, {0, 0, 0}, {1.8f, 1.8f, 1.8f});
-    nodes_.frontWheel = compose({0.48f, 0.30f, 0}, {0, 0, -wheelAngle_});
-    nodes_.rearWheel = compose({-0.46f, 0.30f, 0}, {0, 0, -wheelAngle_});
-    nodes_.crank = compose({-0.06f, 0.25f, 0}, {0, 0, -crankAngle_});
-    nodes_.handlebar = compose({0.36f, 0.57f, 0}, {0, inputs.steering * 0.35f, 0});
-    nodes_.pelicanBody = compose({-0.13f, 0.965f + bob + inputs.airborne * 0.025f, 0},
-                                  {std::sin(crankAngle_) * 0.035f * inputs.pedal, 0, 0.35f + inputs.trick * 0.14f});
-    nodes_.pelicanHead = compose({0.23f, 1.37f - bob * 0.75f, 0}, {0, std::sin(inputs.time * 0.35f) * 0.12f, -0.05f});
-    nodes_.pelicanBeak = nodes_.pelicanHead * compose({0.078f, -0.016f, 0}, {0, 0, -0.3f - jaw_ * 0.55f});
-    nodes_.leftWing = nodes_.pelicanBody * compose({0.14f, 0.085f, -0.17f}, {wingFlap, 0, -1.25f * (1.0f - wingSpread_)}, {1, 1, -1});
-    nodes_.rightWing = nodes_.pelicanBody * compose({0.14f, 0.085f, 0.17f}, {-wingFlap, 0, 1.25f * (1.0f - wingSpread_)});
-    nodes_.leftLeg = compose({-0.08f, 0.77f, -0.09f}, {0, 0, std::sin(crankAngle_) * 0.45f});
-    nodes_.rightLeg = compose({-0.08f, 0.77f, 0.09f}, {0, 0, std::sin(crankAngle_ + kPi) * 0.45f});
+    const float steerAngle = inputs.steering * 0.35f;
 
-    for (size_t i = 0; i < nodes_.fish.size(); ++i) {
-        const float phase = inputs.time * (1.3f + static_cast<float>(i) * 0.07f) + static_cast<float>(i) * 1.1f;
-        const float localX = 5.0f + static_cast<float>(i) * 8.0f + std::fmod(inputs.time * (1.2f + i * 0.15f), 44.0f);
-        const float z = -18.0f - static_cast<float>(i % 3) * 5.0f;
-        const double height = waveHeight(localX, z, inputs.time, inputs.waveAmplitude);
-        nodes_.fish[i] = compose({localX, static_cast<float>(height) - 0.25f + std::sin(phase) * 0.15f, z},
-                                  {0, std::sin(phase) * 0.25f, std::sin(phase * 1.7f) * 0.2f},
-                                  {1.0f, 1.0f, 1.0f});
+    // ---- rider root: jump height + lane offset + lean/yaw + wheelie about the rear contact ----
+    const float yaw = -std::atan2(inputs.laneVelocity, std::max(inputs.speed, 1.5f));
+    const Mat4 riderRoot = Mat4::translation({0.0f, inputs.verticalPosition, inputs.lane}) *
+                           Mat4::rotationY(yaw) * Mat4::rotationX(inputs.lean);
+    const Mat4 root = riderRoot *
+                      Mat4::translation(kRearHub) * Mat4::rotationZ(inputs.wheelie) * Mat4::translation(-kRearHub);
+
+    // ---- rider-local pose (bicycle frame space) ----
+    const Mat4 steeringLocal = Mat4::translation(kSteeringPivot) * Mat4::rotationY(steerAngle);
+    const Mat4 frontWheelLocal = steeringLocal *
+        compose(kFrontHub - kSteeringPivot, {0.0f, 0.0f, -wheelAngle_});
+    const Mat4 rearWheelLocal = compose(kRearHub, {0.0f, 0.0f, -wheelAngle_});
+    const Mat4 crankLocal = compose(kBottomBracket, {0.0f, 0.0f, -crankAngle_});
+
+    Mat4 bodyLocal = compose({-0.13f, 0.965f + bob + inputs.airborne * 0.025f, 0},
+                             {std::sin(crankAngle_) * 0.035f * inputs.pedal, 0, 0.35f + inputs.trick * 0.14f});
+    Mat4 headLocal = compose({0.23f, 1.37f - bob * 0.75f, 0},
+                             {0, std::sin(inputs.time * 0.35f) * 0.12f, -0.05f});
+    Mat4 beakLocal = headLocal * compose({0.078f, -0.016f, 0}, {0, 0, -0.3f - jaw_ * 0.55f});
+    // Wings fold by yawing back along the body and rolling the wing surface upright so the
+    // folded wing hugs the flank; both relax toward the spread pose as the trick ramps up.
+    const float wingYaw = lerp(2.50f, 0.35f, wingSpread_);
+    const float wingRoll = lerp(1.30f, 0.0f, wingSpread_);
+    Mat4 leftWingLocal = bodyLocal * compose({0.14f, 0.085f, -0.17f},
+                                             {wingFlap - wingRoll, -wingYaw, 0}, {1, 1, -1});
+    Mat4 rightWingLocal = bodyLocal * compose({0.14f, 0.085f, 0.17f},
+                                             {-wingFlap + wingRoll, wingYaw, 0});
+
+    // ---- legs: two-bone IK onto the spinning pedals ----
+    struct LegRig {
+        float side;
+        Mat4* thigh;
+        Mat4* shin;
+        Mat4* knee;
+        Mat4* ankle;
+        Mat4* foot;
+    };
+    const std::array<LegRig, 2> legs{{
+        {-1.0f, &nodes_.thighLeft, &nodes_.shinLeft, &nodes_.kneeLeft, &nodes_.ankleLeft, &nodes_.footLeft},
+        {1.0f, &nodes_.thighRight, &nodes_.shinRight, &nodes_.kneeRight, &nodes_.ankleRight, &nodes_.footRight},
+    }};
+    for (const LegRig& leg : legs) {
+        const float side = leg.side;
+        const Vec3 hip = transformPoint(bodyLocal, {-0.05f, -0.125f, side * 0.09f});
+        const float pedalPhase = -crankAngle_ + (side > 0.0f ? 0.0f : kPi);
+        const Vec3 pedal = kBottomBracket + rotateZ({kCrankRadius, 0.0f, side * kPedalHalfTrack}, pedalPhase);
+        const Vec3 target{pedal.x - kPedalTargetForward, pedal.y + kPedalTargetUp, pedal.z * 0.92f};
+        const Vec3 pole{1.0f, 0.15f, side * 0.32f};
+
+        Vec3 knee{};
+        Vec3 ankle{};
+        solveTwoBone(hip, target, kThighLength, kShinLength, pole, knee, ankle);
+
+        const Mat4 thigh = segmentMatrix(hip, knee) * Mat4::scale({kThighRadius, 1.0f, kThighRadius});
+        const Mat4 shin = segmentMatrix(knee, ankle) * Mat4::scale({kShinRadius, 1.0f, kShinRadius});
+        const Mat4 kneeJoint = compose(knee, {}, {kJointRadius, kJointRadius, kJointRadius});
+        // Ankle sphere closes the gap between the thin bare shin and the foot plate.
+        const Mat4 ankleJoint = compose(ankle, {}, {kAnkleRadius, kAnkleRadius, kAnkleRadius});
+        const Mat4 foot = compose({ankle.x - 0.012f, ankle.y - 0.04f, ankle.z},
+                                  {0, 0, -0.08f + std::sin(-crankAngle_ + (side > 0.0f ? 0.0f : kPi) + 0.6f) * 0.12f});
+        *leg.thigh = root * thigh;
+        *leg.shin = root * shin;
+        *leg.knee = root * kneeJoint;
+        *leg.ankle = root * ankleJoint;
+        *leg.foot = root * foot;
     }
+
+    nodes_.bicycle = root;
+    nodes_.frontWheel = root * frontWheelLocal;
+    nodes_.rearWheel = root * rearWheelLocal;
+    nodes_.crank = root * crankLocal;
+    nodes_.handlebar = root * steeringLocal;
+    nodes_.pelicanBody = root * bodyLocal;
+    nodes_.pelicanHead = root * headLocal;
+    nodes_.pelicanBeak = root * beakLocal;
+    nodes_.leftWing = root * leftWingLocal;
+    nodes_.rightWing = root * rightWingLocal;
+
 }
 
 std::array<ChunkPlacement, kWorldChunkCount> computeChunkPlacements(double totalDistance) {

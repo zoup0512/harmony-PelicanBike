@@ -3,11 +3,12 @@ import { PelicanColors } from '../theme/PelicanTheme';
 
 @Component
 export struct TouchControls {
-  compact: boolean = false;
-  safeLeft: number = 0;
-  safeRight: number = 0;
-  safeBottom: number = 0;
-  bottomOffset: number = 0;
+  @Prop compact: boolean = false;
+  @Prop safeLeft: number = 0;
+  @Prop safeRight: number = 0;
+  @Prop safeBottom: number = 0;
+  @Prop @Watch('onInputActiveChanged') inputActive: boolean = true;
+  private stickPointer: number = -1;
   onControl: (key: ControlKey, pressed: boolean) => void = (_key: ControlKey, _pressed: boolean): void => {};
   onAction: (action: GameAction) => void = (_action: GameAction): void => {};
 
@@ -73,7 +74,7 @@ export struct TouchControls {
       .hitTestBehavior(HitTestMode.None)
 
       Stack({ alignContent: Alignment.Start }) {
-        this.axisMark('◀')
+        this.axisMark('‹')
       }
       .width('100%')
       .height('100%')
@@ -81,7 +82,7 @@ export struct TouchControls {
       .hitTestBehavior(HitTestMode.None)
 
       Stack({ alignContent: Alignment.End }) {
-        this.axisMark('▶')
+        this.axisMark('›')
       }
       .width('100%')
       .height('100%')
@@ -113,11 +114,27 @@ export struct TouchControls {
         .backgroundColor(Color.Transparent)
         .borderRadius(this.stickSize() / 2)
         .stateEffect(false)
+        .accessibilityText('方向摇杆：左右转向，上推加速，下拉刹车')
         .onTouch((event: TouchEvent): void => {
-          if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+          event.stopPropagation();
+          if (!this.inputActive || event.type === TouchType.Cancel) {
             this.resetStick();
-          } else if (event.touches.length > 0) {
-            this.updateStick(event.touches[0].x, event.touches[0].y);
+            return;
+          }
+          if (event.type === TouchType.Down && this.stickPointer < 0 && event.changedTouches.length > 0) {
+            this.stickPointer = event.changedTouches[0].id;
+          }
+          if (event.type === TouchType.Up) {
+            for (let i: number = 0; i < event.changedTouches.length; i++) {
+              if (event.changedTouches[i].id === this.stickPointer) this.resetStick();
+            }
+            return;
+          }
+          for (let i: number = 0; i < event.touches.length; i++) {
+            if (event.touches[i].id === this.stickPointer) {
+              this.updateStick(event.touches[i].x, event.touches[i].y);
+              break;
+            }
           }
         })
     }
@@ -138,7 +155,7 @@ export struct TouchControls {
 
   @Builder
   private skill(symbol: string, label: string, action: GameAction, primary: boolean, x: number, y: number) {
-    Button() {
+    Button({ type: ButtonType.Circle }) {
       Column({ space: 1 }) {
         Text(symbol)
           .fontSize(primary ? 27 : 22)
@@ -158,7 +175,8 @@ export struct TouchControls {
     .backgroundColor(primary ? '#C46B4226' : '#DD1A3446')
     .border({ width: 2, color: primary ? '#FFD28A' : '#B6E4E5' })
     .shadow({ radius: primary ? 17 : 10, color: primary ? '#80D69044' : '#99000000', offsetX: 0, offsetY: 3 })
-    .stateEffect(false)
+    .stateEffect(true)
+    .enabled(this.inputActive)
     .position({ x: x, y: y })
     .onClick((): void => { this.onAction(action); })
     .accessibilityText(label)
@@ -234,7 +252,16 @@ export struct TouchControls {
     this.onControl(key, pressed);
   }
 
+  aboutToDisappear(): void {
+    this.resetStick();
+  }
+
+  onInputActiveChanged(): void {
+    if (!this.inputActive) this.resetStick();
+  }
+
   private resetStick(): void {
+    this.stickPointer = -1;
     this.thumbX = 0;
     this.thumbY = 0;
     this.setHeld(ControlKey.LEFT, false);

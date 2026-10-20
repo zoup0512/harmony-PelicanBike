@@ -32,6 +32,16 @@ struct OrbitCameraState {
     float distance = 0.0f;
 };
 
+// One catchable fish from the ride simulation's pool, in rider-relative coordinates.
+struct FishPose {
+    Vec3 localPosition{};  // +x ahead of the rider, y above the road, z lane
+    float phase = 0.0f;
+    float scale = 1.0f;
+    bool golden = false;
+};
+
+constexpr uint32_t kMaxRenderFish = 12;
+
 struct RenderStats {
     uint64_t drawCalls = 0;
     uint64_t triangles = 0;
@@ -58,6 +68,17 @@ struct RenderState {
     float airborne = 0.0f;
     float trick = 0.0f;
     float mouthOpen = 0.0f;
+    // Pose channels forwarded from the ride simulation so the character rig matches gameplay.
+    float crankAngle = 0.0f;
+    float wheelAngle = 0.0f;
+    float lean = 0.0f;
+    float wheelie = 0.0f;
+    float verticalPosition = 0.0f;
+    float lane = 0.0f;
+    float laneVelocity = 0.0f;
+    // Catchable fish currently in play; the pelican eats these, so they drive the fish HUD.
+    std::array<FishPose, kMaxRenderFish> fish{};
+    uint32_t fishCount = 0;
     float hour = 16.5f;
     float cloudCover = 0.45f;
     float waveAmplitude = 1.0f;
@@ -66,6 +87,13 @@ struct RenderState {
     Vec3 cameraTarget{4.2f, 0.75f, -1.0f};
     bool helmet = true;
     bool glasses = true;
+    bool scarf = true;
+    bool bloom = true;
+    // Retained for API stability with the integration layer; the scene reads the
+    // multipliers once the post-process hooks consume them.
+    float fogMultiplier = 1.0f;
+    float exposureMultiplier = 1.0f;
+    float bloomBoost = 1.0f;
     bool enableSpeedLines = true;
     // When false, the scene's orbit camera is used and can be controlled by the gesture methods.
     bool useExternalCamera = true;
@@ -191,7 +219,16 @@ private:
     Mesh flockPelicanBodyMesh_;
     Mesh flockPelicanWingMesh_;
     Mesh bicycleMesh_;
+    Mesh frontWheelMesh_;
+    Mesh rearWheelMesh_;
+    Mesh crankMesh_;
+    Mesh steeringMesh_;
+    Mesh limbMesh_;
+    Mesh shinMesh_;
+    Mesh jointMesh_;
+    Mesh footMesh_;
     Mesh pelicanBodyMesh_;
+    Mesh pelicanNeckMesh_;
     Mesh pelicanHeadMesh_;
     Mesh pelicanBeakMesh_;
     Mesh pelicanWingMesh_;
@@ -213,6 +250,7 @@ private:
     ScarfSimulation scarf_;
     ParticleSystem particles_;
     CpuMesh scratchScarf_;
+    CpuMesh scratchNeck_;
     CpuMesh scratchParticles_;
     CpuMesh scratchSpeedLines_;
     Random effectsRandom_{0x514f3a29U};

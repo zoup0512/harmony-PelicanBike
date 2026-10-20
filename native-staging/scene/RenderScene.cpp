@@ -217,8 +217,28 @@ bool RenderScene::createMeshes() {
     if (!createStatic(birdWingMesh_, makeBirdWingMesh(false), "gull wing")) return false;
     if (!createStatic(flockPelicanBodyMesh_, makeBirdBodyMesh(true), "flock pelican body")) return false;
     if (!createStatic(flockPelicanWingMesh_, makeBirdWingMesh(true), "flock pelican wing")) return false;
-    if (!createStatic(bicycleMesh_, makeBicycleMesh(), "bicycle")) return false;
+    if (!createStatic(bicycleMesh_, makeBicycleFrameMesh(), "bicycle frame")) return false;
+    if (!createStatic(frontWheelMesh_, makeBicycleWheelMesh(), "front wheel")) return false;
+    if (!createStatic(rearWheelMesh_, makeBicycleWheelMesh(), "rear wheel")) return false;
+    if (!createStatic(crankMesh_, makeBicycleCrankMesh(), "crank")) return false;
+    if (!createStatic(steeringMesh_, makeBicycleSteeringMesh(), "steering")) return false;
+    if (!createStatic(limbMesh_, makeLimbMesh(), "limb")) return false;
+    if (!createStatic(shinMesh_, makeShinMesh(), "shin")) return false;
+    if (!createStatic(jointMesh_, makeJointMesh(), "joint")) return false;
+    if (!createStatic(footMesh_, makeFootMesh(), "foot")) return false;
     if (!createStatic(pelicanBodyMesh_, makePelicanBodyMesh(), "pelican body")) return false;
+    {
+        // Neck is re-skinned every frame from the body/head nodes, so it owns dynamic buffers.
+        constexpr uint32_t kNeckSegments = 20;
+        constexpr uint32_t kNeckRadial = 12;
+        const std::array<Vec3, 5> restCurve{{{-0.16f, 0.935f, 0.0f}, {-0.095f, 1.035f, 0.0f},
+                                            {0.04f, 1.19f, 0.0f}, {0.14f, 1.30f, 0.0f}, {0.20f, 1.34f, 0.0f}}};
+        buildNeckMesh(scratchNeck_, restCurve, kNeckSegments, kNeckRadial, {0.94f, 0.92f, 0.85f});
+        if (!pelicanNeckMesh_.create(scratchNeck_, true, scratchNeck_.vertices.size(),
+                                     scratchNeck_.indices.size())) {
+            return false;
+        }
+    }
     if (!createStatic(pelicanHeadMesh_, makePelicanHeadMesh(), "pelican head")) return false;
     if (!createStatic(pelicanBeakMesh_, makePelicanBeakMesh(), "pelican beak")) return false;
     if (!createStatic(pelicanWingMesh_, makePelicanWingMesh(), "pelican wing")) return false;
@@ -366,6 +386,13 @@ void RenderScene::update(const RenderState& state) {
     animation.trick = state_.trick;
     animation.mouthOpen = state_.mouthOpen;
     animation.waveAmplitude = state_.waveAmplitude;
+    animation.crankAngle = state_.crankAngle;
+    animation.wheelAngle = state_.wheelAngle;
+    animation.lean = state_.lean;
+    animation.wheelie = state_.wheelie;
+    animation.verticalPosition = state_.verticalPosition;
+    animation.lane = state_.lane;
+    animation.laneVelocity = state_.laneVelocity;
     animator_.update(animation);
 
     for (size_t slot = 0; slot < chunks_.size(); ++slot) {
@@ -375,7 +402,21 @@ void RenderScene::update(const RenderState& state) {
     }
 
     const AnimatedNodes& nodes = animator_.nodes();
-    const Vec3 knotCenter = transformPoint(nodes.pelicanBody, {0.23f, 0.12f, 0});
+    // Neck spans the body's shoulders to the underside of the skull, following the same
+    // S-curve the H5 rig builds each frame.
+    const Vec3 neckBase = transformPoint(nodes.pelicanBody, {0.30f, 0.10f, 0.0f});
+    const Vec3 headAttach = transformPoint(nodes.pelicanHead, {-0.06f, -0.06f, 0.0f});
+    std::array<Vec3, 5> neckPoints{};
+    neckPoints[0] = neckBase + Vec3{-0.03f, -0.03f, 0.0f};
+    neckPoints[1] = neckBase + Vec3{0.035f, 0.07f, 0.0f};
+    neckPoints[2] = mix(neckBase, headAttach, 0.45f) + Vec3{0.035f, 0.0f, 0.0f};
+    neckPoints[3] = mix(transformPoint(nodes.pelicanHead, {-0.075f, -0.10f, 0.0f}),
+                        headAttach + Vec3{-0.075f, -0.10f, 0.0f}, 0.4f);
+    neckPoints[4] = headAttach;
+    buildNeckMesh(scratchNeck_, neckPoints, 20, 12, {0.94f, 0.92f, 0.85f});
+
+    // Scarf knot rides the lower neck, matching the H5 rig's 20% station.
+    const Vec3 knotCenter = catmullRomSample(neckPoints, 0.2f);
     const Vec3 rootA = knotCenter + Vec3{-0.015f, 0.02f, -0.0375f};
     const Vec3 rootB = knotCenter + Vec3{-0.015f, 0.02f, 0.0375f};
     const Vec3 wind{-state_.speedMetersPerSecond * 0.85f, 0.15f, std::sin(localTime_ * 0.4f) * 0.8f};
@@ -385,7 +426,8 @@ void RenderScene::update(const RenderState& state) {
     const float localScroll = state_.speedMetersPerSecond * state_.deltaSeconds;
     if (state_.speedMetersPerSecond > 4.0f && effectsRandom_.next() < state_.deltaSeconds * 18.0f) {
         Particle particle;
-        particle.position = {-0.45f, 0.04f, effectsRandom_.range(-0.22f, 0.22f)};
+        particle.position = {-0.45f, 0.04f + state_.verticalPosition,
+                             state_.lane + effectsRandom_.range(-0.22f, 0.22f)};
         particle.velocity = {-state_.speedMetersPerSecond * 0.25f, effectsRandom_.range(0.35f, 1.0f), effectsRandom_.range(-0.45f, 0.45f)};
         particle.color = night_ > 0.5f ? Vec3{0.3f, 0.55f, 1.4f} : Vec3{0.55f, 0.46f, 0.34f};
         particle.size = effectsRandom_.range(0.035f, 0.08f);
@@ -414,6 +456,7 @@ void RenderScene::updateChunk(ChunkGpu& chunk, int64_t index) {
 void RenderScene::updateDynamicMeshes() {
     scarf_.fillMesh(scratchScarf_);
     scarfMesh_.update(scratchScarf_);
+    pelicanNeckMesh_.update(scratchNeck_);
     fillParticleCpuMesh(particles_, scratchParticles_);
     particleMesh_.update(scratchParticles_);
     fillSpeedLinesCpu(localTime_, state_.speedMetersPerSecond,
@@ -607,15 +650,44 @@ void RenderScene::drawBird(const Mat4& bodyModel, float flap, bool pelican, bool
 
 void RenderScene::drawCharacters() {
     const AnimatedNodes& nodes = animator_.nodes();
-    drawLit(bicycleMesh_, nodes.bicycle, {1, 1, 1}, 0.45f,
-            Vec3{0.8f, 0.2f, 0.03f} * night_);
+    const Vec3 nightTint = Vec3{0.8f, 0.2f, 0.03f} * night_;
+    // Bicycle parts each carry their own animated node (wheels spin, crank turns, fork yaws).
+    drawLit(bicycleMesh_, nodes.bicycle, {1, 1, 1}, 0.45f, nightTint);
+    drawLit(rearWheelMesh_, nodes.rearWheel, {1, 1, 1}, 0.45f, nightTint);
+    drawLit(frontWheelMesh_, nodes.frontWheel, {1, 1, 1}, 0.45f, nightTint);
+    drawLit(crankMesh_, nodes.crank, {1, 1, 1}, 0.45f, nightTint);
+    drawLit(steeringMesh_, nodes.handlebar, {1, 1, 1}, 0.45f, nightTint);
+    // Legs: unit limb/joint/foot meshes mapped onto the solved knee and ankle joints.
+    for (const Mat4& thigh : {nodes.thighLeft, nodes.thighRight}) {
+        drawLit(limbMesh_, thigh, {1, 1, 1}, 0.9f);
+    }
+    for (const Mat4& shin : {nodes.shinLeft, nodes.shinRight}) {
+        drawLit(shinMesh_, shin, {1, 1, 1}, 0.9f);
+    }
+    for (const Mat4& joint : {nodes.kneeLeft, nodes.kneeRight}) {
+        drawLit(jointMesh_, joint, {1, 1, 1}, 0.9f);
+    }
+    // Ankles are bare skin, so the cream joint mesh is tinted to the leg orange.
+    for (const Mat4& ankle : {nodes.ankleLeft, nodes.ankleRight}) {
+        drawLit(jointMesh_, ankle, {1.01f, 0.59f, 0.20f}, 0.9f);
+    }
+    for (const Mat4& foot : {nodes.footLeft, nodes.footRight}) {
+        drawLit(footMesh_, foot, {1, 1, 1}, 0.6f);
+    }
     drawLit(pelicanBodyMesh_, nodes.pelicanBody, {1, 1, 1}, 0.86f);
+    drawLit(pelicanNeckMesh_, Mat4::identity(), {1, 1, 1}, 0.86f);
     drawLit(pelicanHeadMesh_, nodes.pelicanHead, {1, 1, 1}, 0.68f);
     drawLit(pelicanBeakMesh_, nodes.pelicanBeak, {1, 1, 1}, 0.42f);
     drawLit(pelicanWingMesh_, nodes.leftWing, {1, 1, 1}, 0.76f);
     drawLit(pelicanWingMesh_, nodes.rightWing, {1, 1, 1}, 0.76f);
-    for (const Mat4& fishTransform : nodes.fish) {
-        drawLit(fishMesh_, fishTransform, {1, 1, 1}, 0.32f);
+    // Catchable fish from the ride simulation, drawn where the pelican can actually eat them.
+    for (uint32_t index = 0; index < state_.fishCount; ++index) {
+        const FishPose& fish = state_.fish[index];
+        const Vec3 tint = fish.golden ? Vec3{1.7f, 1.25f, 0.45f} : Vec3{1, 1, 1};
+        const Mat4 model = compose(fish.localPosition,
+                                   {0.0f, kPi + std::sin(fish.phase) * 0.25f, std::sin(fish.phase * 1.7f) * 0.2f},
+                                   {fish.scale, fish.scale, fish.scale});
+        drawLit(fishMesh_, model, tint, 0.32f);
     }
     glDisable(GL_CULL_FACE);
     drawLit(scarfMesh_, Mat4::identity(), {1, 1, 1}, 0.78f);
@@ -746,10 +818,12 @@ RenderStats RenderScene::stats() const {
                                                        &particleProgram_, &bloomDownProgram_, &bloomBlurProgram_,
                                                        &finalProgram_, &copyProgram_}};
     for (const ShaderProgram* program : programs) if (*program) ++result.programs;
-    const std::array<const Mesh*, 23> meshes{{&skyMesh_, &oceanMesh_, &roadMesh_, &guardrailMesh_, &treeMesh_, &pineMesh_,
+    const std::array<const Mesh*, 32> meshes{{&skyMesh_, &oceanMesh_, &roadMesh_, &guardrailMesh_, &treeMesh_, &pineMesh_,
                                              &palmMesh_, &rockMesh_, &lampMesh_, &lighthouseMesh_, &boatMesh_, &birdBodyMesh_,
                                              &birdWingMesh_, &flockPelicanBodyMesh_, &flockPelicanWingMesh_, &bicycleMesh_,
-                                             &pelicanBodyMesh_, &pelicanHeadMesh_, &pelicanBeakMesh_, &pelicanWingMesh_,
+                                             &frontWheelMesh_, &rearWheelMesh_, &crankMesh_, &steeringMesh_, &limbMesh_, &shinMesh_,
+                                             &jointMesh_, &footMesh_,
+                                             &pelicanBodyMesh_, &pelicanNeckMesh_, &pelicanHeadMesh_, &pelicanBeakMesh_, &pelicanWingMesh_,
                                              &fishMesh_, &scarfMesh_, &particleMesh_}};
     for (const Mesh* mesh : meshes) {
         if (*mesh) {
@@ -891,7 +965,16 @@ void RenderScene::destroy() {
     flockPelicanBodyMesh_.destroy();
     flockPelicanWingMesh_.destroy();
     bicycleMesh_.destroy();
+    frontWheelMesh_.destroy();
+    rearWheelMesh_.destroy();
+    crankMesh_.destroy();
+    steeringMesh_.destroy();
+    limbMesh_.destroy();
+    shinMesh_.destroy();
+    jointMesh_.destroy();
+    footMesh_.destroy();
     pelicanBodyMesh_.destroy();
+    pelicanNeckMesh_.destroy();
     pelicanHeadMesh_.destroy();
     pelicanBeakMesh_.destroy();
     pelicanWingMesh_.destroy();
@@ -909,6 +992,7 @@ void RenderScene::destroy() {
     finalProgram_.destroy();
     copyProgram_.destroy();
     scratchScarf_.clear();
+    scratchNeck_.clear();
     scratchParticles_.clear();
     scratchSpeedLines_.clear();
     stats_ = {};

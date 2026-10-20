@@ -2,6 +2,7 @@
 
 #include "SceneMath.h"
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <vector>
@@ -67,6 +68,19 @@ CpuMesh makeBoatMesh();
 CpuMesh makeBirdBodyMesh(bool pelican);
 CpuMesh makeBirdWingMesh(bool pelican);
 CpuMesh makeBicycleMesh();
+CpuMesh makeBicycleFrameMesh();
+CpuMesh makeBicycleWheelMesh();
+CpuMesh makeBicycleCrankMesh();
+CpuMesh makeBicycleSteeringMesh();
+CpuMesh makeLimbMesh();
+CpuMesh makeShinMesh();
+CpuMesh makeJointMesh();
+CpuMesh makeFootMesh();
+// Catmull-Rom station along a 5-point neck curve, t in [0, 1].
+Vec3 catmullRomSample(const std::array<Vec3, 5>& points, float t);
+// Rebuilds a neck tube in place so a per-frame skinning pass reuses the buffer capacity.
+void buildNeckMesh(CpuMesh& mesh, const std::array<Vec3, 5>& controlPoints,
+                   uint32_t tubeSegments, uint32_t radialSegments, const Vec3& color);
 CpuMesh makePelicanBodyMesh();
 CpuMesh makePelicanHeadMesh();
 CpuMesh makePelicanBeakMesh();

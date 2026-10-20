@@ -4,8 +4,8 @@ import { GlassPanel } from './GlassPanel';
 
 @Component
 export struct CameraBar {
-  activeCamera: CameraMode = CameraMode.CINE;
-  compact: boolean = false;
+  @Prop activeCamera: CameraMode = CameraMode.CINE;
+  @Prop compact: boolean = false;
   maxWidth: number = 520;
   onSelect: (mode: CameraMode) => void = (_mode: CameraMode): void => {};
 

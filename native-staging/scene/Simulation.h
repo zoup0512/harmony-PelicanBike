@@ -116,9 +116,18 @@ struct AnimatedNodes {
     Mat4 pelicanBeak{};
     Mat4 leftWing{};
     Mat4 rightWing{};
-    Mat4 leftLeg{};
-    Mat4 rightLeg{};
-    std::array<Mat4, 6> fish{};
+    // Two-bone leg rig: thigh/shin span a joint pair, knee/ankle are joint spheres,
+    // foot carries the pedal contact.
+    Mat4 thighLeft{};
+    Mat4 shinLeft{};
+    Mat4 kneeLeft{};
+    Mat4 ankleLeft{};
+    Mat4 footLeft{};
+    Mat4 thighRight{};
+    Mat4 shinRight{};
+    Mat4 kneeRight{};
+    Mat4 ankleRight{};
+    Mat4 footRight{};
 };
 
 struct AnimationInputs {
@@ -131,6 +140,15 @@ struct AnimationInputs {
     float trick = 0.0f;
     float mouthOpen = 0.0f;
     float waveAmplitude = 1.0f;
+    // Pose channels owned by the ride simulation; the rig composes them instead of
+    // integrating its own copy, so the character always matches gameplay state.
+    float crankAngle = 0.0f;
+    float wheelAngle = 0.0f;
+    float lean = 0.0f;
+    float wheelie = 0.0f;
+    float verticalPosition = 0.0f;
+    float lane = 0.0f;
+    float laneVelocity = 0.0f;
 };
 
 class CharacterAnimator {

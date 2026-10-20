@@ -4,13 +4,13 @@ import { GlassPanel } from './GlassPanel';
 
 @Component
 export struct ScorePanel {
-  telemetry: GameTelemetry = new GameTelemetry();
-  compact: boolean = false;
-  mobileHud: boolean = false;
-  showTime: boolean = true;
+  @Prop telemetry: GameTelemetry = new GameTelemetry();
+  @Prop compact: boolean = false;
+  @Prop mobileHud: boolean = false;
+  @Prop showTime: boolean = true;
   onHourChange: (hour: number) => void = (_hour: number): void => {};
   onToggleFlow: () => void = (): void => {};
-  timeFlow: boolean = true;
+  @Prop timeFlow: boolean = true;
 
   @Builder
   panelContent() {

@@ -8,9 +8,9 @@ export struct ToolBar {
   mobileMenu: boolean = false;
   availableWidth: number = 420;
   @State private menuOpen: boolean = false;
-  musicEnabled: boolean = true;
-  settingsOpen: boolean = false;
-  immersiveEnabled: boolean = false;
+  @Prop musicEnabled: boolean = true;
+  @Prop settingsOpen: boolean = false;
+  @Prop immersiveEnabled: boolean = false;
   onAction: (action: ToolAction) => void = (_action: ToolAction): void => {};
 
   @Builder

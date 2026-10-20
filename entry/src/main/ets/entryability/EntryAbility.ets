@@ -59,6 +59,9 @@ export default class EntryAbility extends UIAbility {
       }
       try {
         const mainWindow: window.Window = windowStage.getMainWindowSync();
+        mainWindow.setPreferredOrientation(window.Orientation.LANDSCAPE).catch((error: Error): void => {
+          hilog.warn(DOMAIN, TAG, 'Landscape orientation failed: %{public}s', error.message);
+        });
         mainWindow.setWindowLayoutFullScreen(true).catch((error: Error): void => {
           hilog.warn(DOMAIN, TAG, 'setWindowLayoutFullScreen failed: %{public}s', error.message);
         });

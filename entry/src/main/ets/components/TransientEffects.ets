@@ -77,9 +77,9 @@ export struct ScorePopOverlay {
 
 @Component
 export struct FpsBadge {
-  fps: number = 60;
-  qualityLabel: string = '均衡';
-  pixelRatio: number = 1.25;
+  @Prop fps: number = 60;
+  @Prop qualityLabel: string = '均衡';
+  @Prop pixelRatio: number = 1.25;
 
   @Builder
   panelContent() {
@@ -100,9 +100,9 @@ export struct FpsBadge {
 
 @Component
 export struct CinematicOverlay {
-  active: boolean = false;
-  flashVisible: boolean = false;
-  barHeight: number = 0;
+  @Prop active: boolean = false;
+  @Prop flashVisible: boolean = false;
+  @Prop barHeight: number = 0;
 
   build() {
     Stack({ alignContent: Alignment.Center }) {
